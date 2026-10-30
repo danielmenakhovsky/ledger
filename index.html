@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#0e0f11">
+<title>Расходы</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root { --bg: #0e0f11; --ink: #ecedee; --ink2: #a4a8ae; --mute: #6c7077; --accent: #8fb3ff; --line: rgba(255,255,255,.09); }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif; }
+  body { padding: 10px 20px calc(32px + env(safe-area-inset-bottom)); max-width: 560px; margin: 0 auto; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  i { font-style: normal; color: var(--mute); }
+  .num { font-variant-numeric: tabular-nums; }
+  nav { display: flex; align-items: center; justify-content: space-between; height: 40px; color: var(--ink2); }
+  .month { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); }
+  .month button { width: 32px; height: 40px; font-size: 20px; color: var(--ink2); text-align: center; }
+  .month button:first-child { margin-left: -10px; }
+  .month button:disabled { opacity: .25; }
+  .cur { display: flex; gap: 2px; }
+  .cur button { width: 32px; height: 40px; text-align: center; font-weight: 600; color: var(--mute); }
+  .cur button.on { color: var(--ink); }
+  .crumb { color: var(--mute); }
+  .link { color: var(--accent); font-weight: 500; }
+  section { padding: 22px 0 6px; border-top: 1px solid var(--line); }
+  section.top { border-top: 0; padding: 18px 0 26px; }
+  .title { font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+  .total { font-size: 46px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; }
+  .meta { color: var(--ink2); margin-top: 8px; }
+  .meta b { color: var(--ink); font-weight: 600; }
+  h2 { font-size: 13px; font-weight: 500; color: var(--mute); margin: 0 0 10px; }
+  .cat { display: block; width: 100%; padding: 8px 0 10px; }
+  .cat:active { opacity: .6; }
+  .row, .kv, .day, .tx { display: flex; justify-content: space-between; gap: 14px; }
+  .row i, .kv i { margin-left: 8px; display: inline-block; min-width: 30px; text-align: right; }
+  .bar { display: block; height: 2px; margin-top: 8px; background: var(--accent); border-radius: 1px; }
+  .kv { padding: 8px 0; }
+  .kv > span:first-child { color: var(--ink2); }
+  .day { color: var(--mute); font-size: 13px; margin: 18px 0 2px; }
+  .day:first-of-type { margin-top: 0; }
+  .tx { padding: 9px 0; }
+  .tx .l { min-width: 0; }
+  .tx .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tx .r { text-align: right; flex-shrink: 0; }
+  .s { color: var(--mute); font-size: 12.5px; margin-top: 2px; }
+  .more { display: block; padding: 14px 0 4px; }
+  .empty { color: var(--mute); margin: 4px 0 10px; }
+  .msg { margin-top: 30vh; text-align: center; color: var(--ink2); padding: 0 20px; }
+  footer { color: var(--mute); font-size: 12px; padding-top: 18px; border-top: 1px solid var(--line); margin-top: 16px; }
+</style>
+</head>
+<body>
+<div id="app"><div class="msg">Открываю...</div></div>
+<script>
+(() => {
+  const $app = document.getElementById('app');
+  const MONTHS = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+  const MON_S = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+  const WD = ['вс','пн','вт','ср','чт','пт','сб'];
+  const SIGN = { RUB: '₽', USD: '$', EUR: '€' };
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  // ── Telegram Mini App ──────────────────────────────────────────────────────
+  // Вне телеги (обычный браузер) скрипт телеги тоже грузится, но initData пустая.
+  const tg = window.Telegram && window.Telegram.WebApp;
+  const inTg = !!(tg && tg.initData);
+  const ver = v => inTg && tg.isVersionAtLeast && tg.isVersionAtLeast(v);
+  const haptic = kind => { try { if (ver('6.1')) kind === 'tap' ? tg.HapticFeedback.selectionChanged() : tg.HapticFeedback.impactOccurred(kind); } catch (e) {} };
+
+  function applyTheme() {
+    if (!inTg) return;
+    const t = tg.themeParams || {}, r = document.documentElement.style, dark = tg.colorScheme !== 'light';
+    const set = (v, x) => x && r.setProperty(v, x);
+    set('--bg', t.bg_color);
+    set('--ink', t.text_color);
+    set('--ink2', t.subtitle_text_color || t.hint_color);
+    set('--mute', t.hint_color);
+    set('--accent', t.button_color || t.accent_text_color);
+    r.setProperty('--line', dark ? 'rgba(255,255,255,.09)' : 'rgba(0,0,0,.09)');
+    try {
+      if (ver('6.1') && t.bg_color) { tg.setHeaderColor(t.bg_color); tg.setBackgroundColor(t.bg_color); }
+    } catch (e) {}
+  }
+  if (inTg) {
+    tg.ready();
+    tg.expand();
+    try { if (ver('7.7')) tg.disableVerticalSwipes(); } catch (e) {}   // длинный список не закрывает приложение
+    applyTheme();
+    tg.onEvent('themeChanged', () => { applyTheme(); if (DATA) render(); });
+  }
+
+  function fmt(x, cur, dec) {
+    const a = Math.abs(x);
+    const d = dec ?? ((cur === 'USD' || cur === 'USDT' || cur === 'EUR') && a < 100 ? (a < 10 ? 2 : 1) : 0);
+    let s = a.toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d }).replace(/ /g, ' ');
+    if (d && s.includes(',')) s = s.replace(/,?0+$/, '');
+    const neg = x < 0 ? '−' : '';
+    if (cur === 'USD') return neg + '$' + s;
+    if (cur === 'RUB' || cur === 'EUR') return neg + s + ' ' + SIGN[cur];
+    return neg + s + ' ' + cur;
+  }
+
+  // ── ключ ───────────────────────────────────────────────────────────────────
+  // Приходит во фрагменте ссылки (#k=...). Телега дописывает свои параметры после
+  // него через & (#k=...&tgWebAppData=...) — проверено запросом requestWebView
+  // 30.10.2026. На сервер фрагмент не уходит. Запасные места: CloudStorage
+  // телеги и localStorage — если когда-нибудь откроется без фрагмента.
+  const cloud = {
+    get: () => new Promise(res => {
+      if (!ver('6.9')) return res(null);
+      const t = setTimeout(() => res(null), 1500);
+      try { tg.CloudStorage.getItem('exp_k', (err, v) => { clearTimeout(t); res(err ? null : v || null); }); }
+      catch (e) { clearTimeout(t); res(null); }
+    }),
+    set: v => { try { if (ver('6.9')) tg.CloudStorage.setItem('exp_k', v); } catch (e) {} },
+    del: () => { try { if (ver('6.9')) tg.CloudStorage.removeItem('exp_k'); } catch (e) {} },
+  };
+  const local = {
+    get: () => { try { return localStorage.getItem('exp_k'); } catch (e) { return null; } },
+    set: v => { try { localStorage.setItem('exp_k', v); } catch (e) {} },
+    del: () => { try { localStorage.removeItem('exp_k'); } catch (e) {} },
+  };
+
+  async function readKey() {
+    const h = location.hash.replace(/^#/, '');
+    const m = h.match(/(?:^|[&?])k=([A-Za-z0-9_-]{20,})/);
+    if (m) {
+      cloud.set(m[1]); local.set(m[1]);
+      // ключ не висит в адресной строке; параметры телеги оставляем как были
+      const rest = h.replace(/(^|[&?])k=[A-Za-z0-9_-]+&?/, '$1').replace(/^[&?]/, '');
+      history.replaceState(null, '', location.pathname + (rest ? '#' + rest : ''));
+      return m[1];
+    }
+    return (await cloud.get()) || local.get();
+  }
+  const b64 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - s.length % 4) % 4)), c => c.charCodeAt(0));
+
+  async function load() {
+    const k = await readKey();
+    if (!k) return fail('Нет ключа. Открой из бота: /expenses');
+    let enc;
+    try { enc = await (await fetch('data.json?t=' + Date.now(), { cache: 'no-store' })).json(); }
+    catch (e) { return fail('Не загрузились данные. Проверь интернет.'); }
+    try {
+      const key = await crypto.subtle.importKey('raw', b64(k), 'AES-GCM', false, ['decrypt']);
+      const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(enc.iv) }, key, b64(enc.ct));
+      return JSON.parse(new TextDecoder().decode(pt));
+    } catch (e) {
+      cloud.del(); local.del();
+      return fail('Ключ не подходит. Открой заново из бота: /expenses');
+    }
+  }
+
+  // ── экраны ─────────────────────────────────────────────────────────────────
+  let DATA = null;
+  const S = { cur: (() => { try { return localStorage.getItem('exp_cur') || 'USD'; } catch (e) { return 'USD'; } })(),
+              month: null, cat: null, all: false, scroll: 0 };
+
+  // категория — вложенный экран: в телеге системная кнопка «назад», в браузере своя
+  function openCat(c) { S.scroll = window.scrollY; S.cat = c; S.all = false; haptic('tap'); render(); window.scrollTo(0, 0); }
+  function closeCat() { S.cat = null; S.all = false; haptic('tap'); render(); window.scrollTo(0, S.scroll); }
+  if (inTg) tg.BackButton.onClick(() => { if (S.cat) closeCat(); });
+
+  function render() {
+    const D = DATA;
+    const val = e => (S.cur === 'USD' ? e.usd : e.rub) || 0;
+    const now = new Date();
+    const thisM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const months = [...new Set([...D.expenses.map(e => e.d.slice(0, 7)), thisM])].sort();
+    if (!S.month) S.month = thisM;
+    const mi = months.indexOf(S.month);
+    const [y, m] = S.month.split('-').map(Number);
+    const monthName = MONTHS[m - 1][0].toUpperCase() + MONTHS[m - 1].slice(1) + ' ' + y;
+    const otherCur = S.cur === 'USD' ? 'RUB' : 'USD';
+    const otherVal = e => (S.cur === 'USD' ? e.rub : e.usd) || 0;
+
+    const tx = D.expenses.filter(e => e.d.startsWith(S.month));
+    const total = tx.reduce((s, e) => s + val(e), 0);
+    const byCat = {};
+    tx.forEach(e => { byCat[e.cat] = (byCat[e.cat] || 0) + val(e); });
+    const shown = tx.filter(e => !S.cat || e.cat === S.cat)
+      .sort((a, b) => b.d.localeCompare(a.d) || Number(b.id) - Number(a.id));
+
+    if (inTg) S.cat ? tg.BackButton.show() : tg.BackButton.hide();
+    const cur = `<span class="cur"><button data-cur="USD" class="${S.cur === 'USD' ? 'on' : ''}">$</button><button data-cur="RUB" class="${S.cur === 'RUB' ? 'on' : ''}">₽</button></span>`;
+
+    if (S.cat) {
+      const ct = byCat[S.cat] || 0;
+      $app.innerHTML = `
+        <nav>${inTg ? `<span class="crumb">${monthName}</span>` : `<button class="link" id="back">‹ ${monthName}</button>`}${cur}</nav>
+        <section class="top">
+          <div class="title">${esc(S.cat)}</div>
+          <div class="total num">${fmt(ct, S.cur)}</div>
+          <div class="meta num">≈ ${fmt(shown.reduce((s, e) => s + otherVal(e), 0), otherCur)} · ${shown.length} ${plural(shown.length, 'запись', 'записи', 'записей')} · ${total ? Math.round(ct / total * 100) : 0}% месяца</div>
+        </section>
+        <section>${txList(shown, val)}</section>`;
+      return bind(months, mi);
+    }
+
+    const inc = D.income[S.month];
+    const incV = inc ? (S.cur === 'USD' ? inc.usd : inc.rub) : 0;
+    const diff = incV - total;
+    const noRate = tx.filter(e => e.usd == null).length;
+    const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+    const peak = cats.length ? cats[0][1] : 1;
+    const byCur = {};
+    tx.forEach(e => { const c = byCur[e.c] = byCur[e.c] || { a: 0, v: 0 }; c.a += e.a; c.v += val(e); });
+
+    $app.innerHTML = `
+      <nav>
+        <span class="month"><button id="prev" ${mi <= 0 ? 'disabled' : ''} aria-label="раньше">‹</button><span>${monthName}</span><button id="next" ${mi >= months.length - 1 ? 'disabled' : ''} aria-label="позже">›</button></span>
+        ${cur}
+      </nav>
+      <section class="top">
+        <div class="total num">${fmt(total, S.cur)}</div>
+        <div class="meta num">потрачено · ≈ ${fmt(tx.reduce((s, e) => s + otherVal(e), 0), otherCur)} · ${tx.length} ${plural(tx.length, 'запись', 'записи', 'записей')}${noRate ? ` · без курса ${noRate}` : ''}</div>
+        <div class="meta num">${inc ? `доход ${fmt(incV, S.cur)} · ${diff >= 0 ? 'осталось' : 'перерасход'} <b>${diff >= 0 ? '+' : ''}${fmt(diff, S.cur)}</b>` : 'доход за месяц не записан'}</div>
+      </section>
+
+      <section>
+        <h2>Категории</h2>
+        ${cats.length ? cats.map(([c, v]) => `
+          <button class="cat" data-cat="${esc(c)}">
+            <span class="row"><span>${esc(c)}</span><span class="num">${fmt(v, S.cur)}<i>${total ? Math.round(v / total * 100) : 0}%</i></span></span>
+            <span class="bar" style="width:${Math.max(1.5, v / peak * 100)}%"></span>
+          </button>`).join('') : '<p class="empty">В этом месяце трат нет</p>'}
+      </section>
+
+      <section>
+        <h2>Траты</h2>
+        ${txList(shown, val)}
+      </section>
+
+      ${Object.keys(byCur).length ? `<section>
+        <h2>Валюты</h2>
+        ${Object.entries(byCur).sort((a, b) => b[1].v - a[1].v).map(([c, x]) => `
+          <div class="kv"><span>${fmt(x.a, c)}</span><span class="num">${fmt(x.v, S.cur)} <i>${total ? Math.round(x.v / total * 100) : 0}%</i></span></div>`).join('')}
+      </section>` : ''}
+
+      <section>
+        <h2>Долги <i>не в расходах</i></h2>
+        ${D.debts.length ? D.debts.map(x => `<div class="kv"><span>${x.a > 0 ? 'я должен' : 'мне должен'} · ${esc(x.who)}</span><span class="num">${fmt(Math.abs(x.a), x.c)}</span></div>`).join('')
+          : '<p class="empty">Долгов нет</p>'}
+      </section>
+      <footer>обновлено ${esc(D.updated)}</footer>`;
+    bind(months, mi);
+  }
+
+  function txList(shown, val) {
+    const LIMIT = 40;
+    const list = S.all ? shown : shown.slice(0, LIMIT);
+    if (!list.length) return '<p class="empty">Пусто</p>';
+    const days = {};
+    list.forEach(e => (days[e.d] = days[e.d] || []).push(e));
+    const dayTotal = d => shown.filter(e => e.d === d).reduce((s, e) => s + val(e), 0);
+    return Object.entries(days).map(([d, es]) => {
+      const dt = new Date(d + 'T12:00:00');
+      return `<div class="day"><span>${dt.getDate()} ${MON_S[dt.getMonth()]}, ${WD[dt.getDay()]}</span><span class="num">${fmt(dayTotal(d), S.cur)}</span></div>` +
+        es.map(e => `<div class="tx">
+          <div class="l"><div class="t">${esc(e.n || e.cat)}</div>
+            <div class="s">${[!S.cat && e.n ? esc(e.cat) : '', e.ap ? 'примерно' : ''].filter(Boolean).join(' · ')}</div></div>
+          <div class="r"><div class="num">${e.usd == null ? fmt(e.a, e.c) : (e.ap ? '≈ ' : '') + fmt(val(e), S.cur)}</div>
+            <div class="s num">${triple(e)}</div></div>
+        </div>`).join('');
+    }).join('') + (!S.all && shown.length > LIMIT ? `<button class="link more" id="more">Показать все ${shown.length}</button>` : '');
+  }
+
+  function triple(e) {
+    const p = [fmt(e.a, e.c)];
+    if (e.c !== 'RUB' && e.rub != null) p.push(fmt(e.rub, 'RUB'));
+    if (e.c !== 'USD' && e.c !== 'USDT' && e.usd != null) p.push(fmt(e.usd, 'USD'));
+    if (e.usd == null) p.push('курс позже');
+    return p.join(' · ');
+  }
+
+  function bind(months, mi) {
+    const on = (id, f) => { const el = document.getElementById(id); if (el) el.onclick = f; };
+    $app.querySelectorAll('[data-cur]').forEach(b => b.onclick = () => {
+      if (S.cur === b.dataset.cur) return;
+      S.cur = b.dataset.cur; haptic('tap');
+      try { localStorage.setItem('exp_cur', S.cur); } catch (e) {}
+      render();
+    });
+    $app.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => openCat(b.dataset.cat));
+    const go = d => { S.month = months[mi + d]; S.all = false; haptic('light'); render(); };
+    on('prev', () => go(-1));
+    on('next', () => go(1));
+    on('back', closeCat);
+    on('more', () => { S.all = true; haptic('tap'); render(); });
+  }
+
+  function plural(n, a, b, c) {
+    const m10 = n % 10, m100 = n % 100;
+    return m10 === 1 && m100 !== 11 ? a : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? b : c;
+  }
+
+  load().then(D => { if (D) { DATA = D; render(); } });
+})();
+</script>
+</body>
+</html>
