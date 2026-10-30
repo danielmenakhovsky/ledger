@@ -156,6 +156,8 @@
     }
   }
 
+  function fail(t) { $app.innerHTML = `<div class="msg">${esc(t)}</div>`; return null; }
+
   // ── экраны ─────────────────────────────────────────────────────────────────
   let DATA = null;
   const S = { cur: (() => { try { return localStorage.getItem('exp_cur') || 'USD'; } catch (e) { return 'USD'; } })(),
