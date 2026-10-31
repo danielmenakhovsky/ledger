@@ -39,6 +39,7 @@
   .row, .kv, .day, .tx { display: flex; justify-content: space-between; gap: 14px; }
   .row i, .kv i { margin-left: 8px; display: inline-block; min-width: 30px; text-align: right; }
   .bar { display: block; height: 2px; margin-top: 8px; background: var(--accent); border-radius: 1px; }
+  .sub .cat.off { opacity: .45; }
   .kv { padding: 8px 0; }
   .kv > span:first-child { color: var(--ink2); }
   .day { color: var(--mute); font-size: 13px; margin: 18px 0 2px; }
@@ -164,8 +165,8 @@
               month: null, cat: null, all: false, scroll: 0 };
 
   // категория — вложенный экран: в телеге системная кнопка «назад», в браузере своя
-  function openCat(c) { S.scroll = window.scrollY; S.cat = c; S.all = false; haptic('tap'); render(); window.scrollTo(0, 0); }
-  function closeCat() { S.cat = null; S.all = false; haptic('tap'); render(); window.scrollTo(0, S.scroll); }
+  function openCat(c) { S.scroll = window.scrollY; S.cat = c; S.sub = null; S.all = false; haptic('tap'); render(); window.scrollTo(0, 0); }
+  function closeCat() { S.cat = null; S.sub = null; S.all = false; haptic('tap'); render(); window.scrollTo(0, S.scroll); }
   if (inTg) tg.BackButton.onClick(() => { if (S.cat) closeCat(); });
 
   function render() {
@@ -185,7 +186,7 @@
     const total = tx.reduce((s, e) => s + val(e), 0);
     const byCat = {};
     tx.forEach(e => { byCat[e.cat] = (byCat[e.cat] || 0) + val(e); });
-    const shown = tx.filter(e => !S.cat || e.cat === S.cat)
+    const shown = tx.filter(e => (!S.cat || e.cat === S.cat) && (!S.sub || (S.sub === 'dl') === !!e.dl))
       .sort((a, b) => b.d.localeCompare(a.d) || Number(b.id) - Number(a.id));
 
     if (inTg) S.cat ? tg.BackButton.show() : tg.BackButton.hide();
@@ -200,6 +201,7 @@
           <div class="total num">${fmt(ct, S.cur)}</div>
           <div class="meta num">≈ ${fmt(shown.reduce((s, e) => s + otherVal(e), 0), otherCur)} · ${shown.length} ${plural(shown.length, 'запись', 'записи', 'записей')} · ${total ? Math.round(ct / total * 100) : 0}% месяца</div>
         </section>
+        ${subBlock(tx.filter(e => e.cat === S.cat), val, ct)}
         <section>${txList(shown, val)}</section>`;
       return bind(months, mi);
     }
@@ -280,6 +282,19 @@
     return p.join(' · ');
   }
 
+  // Даня 31.10: в ресторанах подраздел «доставка» — две строки внутри категории, тап фильтрует список
+  function subBlock(rows, val, ct) {
+    if (!rows.some(e => e.dl)) return '';
+    const parts = [['dl', 'доставка', rows.filter(e => e.dl)], ['in', 'в заведениях', rows.filter(e => !e.dl)]];
+    const peak = Math.max(...parts.map(p => p[2].reduce((s, e) => s + val(e), 0)), 1);
+    return `<section class="sub">${parts.map(([k, name, r]) => {
+      const v = r.reduce((s, e) => s + val(e), 0);
+      return `<button class="cat${S.sub && S.sub !== k ? ' off' : ''}" data-sub="${k}">
+        <span class="row"><span>${name}</span><span class="num">${fmt(v, S.cur)}<i>${ct ? Math.round(v / ct * 100) : 0}%</i></span></span>
+        <span class="bar" style="width:${Math.max(1.5, v / peak * 100)}%"></span></button>`;
+    }).join('')}</section>`;
+  }
+
   function bind(months, mi) {
     const on = (id, f) => { const el = document.getElementById(id); if (el) el.onclick = f; };
     $app.querySelectorAll('[data-cur]').forEach(b => b.onclick = () => {
@@ -289,6 +304,7 @@
       render();
     });
     $app.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => openCat(b.dataset.cat));
+    $app.querySelectorAll('[data-sub]').forEach(b => b.onclick = () => { S.sub = S.sub === b.dataset.sub ? null : b.dataset.sub; S.all = false; haptic('tap'); render(); });
     const go = d => { S.month = months[mi + d]; S.all = false; haptic('light'); render(); };
     on('prev', () => go(-1));
     on('next', () => go(1));
