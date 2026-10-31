@@ -194,12 +194,13 @@
 
     if (S.cat) {
       const ct = byCat[S.cat] || 0;
+      const st = S.sub ? shown.reduce((s, e) => s + val(e), 0) : ct;   // выбран подраздел — итог по нему
       $app.innerHTML = `
         <nav>${inTg ? `<span class="crumb">${monthName}</span>` : `<button class="link" id="back">‹ ${monthName}</button>`}${cur}</nav>
         <section class="top">
-          <div class="title">${esc(S.cat)}</div>
-          <div class="total num">${fmt(ct, S.cur)}</div>
-          <div class="meta num">≈ ${fmt(shown.reduce((s, e) => s + otherVal(e), 0), otherCur)} · ${shown.length} ${plural(shown.length, 'запись', 'записи', 'записей')} · ${total ? Math.round(ct / total * 100) : 0}% месяца</div>
+          <div class="title">${esc(S.cat)}${S.sub ? (S.sub === 'dl' ? ' · доставка' : ' · в заведениях') : ''}</div>
+          <div class="total num">${fmt(st, S.cur)}</div>
+          <div class="meta num">≈ ${fmt(shown.reduce((s, e) => s + otherVal(e), 0), otherCur)} · ${shown.length} ${plural(shown.length, 'запись', 'записи', 'записей')} · ${total ? Math.round(st / total * 100) : 0}% месяца</div>
         </section>
         ${subBlock(tx.filter(e => e.cat === S.cat), val, ct)}
         <section>${txList(shown, val)}</section>`;
