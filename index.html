@@ -40,6 +40,10 @@
   .row i, .kv i { margin-left: 8px; display: inline-block; min-width: 30px; text-align: right; }
   .bar { display: block; height: 2px; margin-top: 8px; background: var(--accent); border-radius: 1px; }
   .sub .cat.off { opacity: .45; }
+  .cat.dim { opacity: .55; }
+  .incbtn { display: block; width: 100%; }
+  .s.one { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .incbtn:active { opacity: .6; }
   .kv { padding: 8px 0; }
   .kv > span:first-child { color: var(--ink2); }
   .day { color: var(--mute); font-size: 13px; margin: 18px 0 2px; }
@@ -166,8 +170,10 @@
 
   // категория — вложенный экран: в телеге системная кнопка «назад», в браузере своя
   function openCat(c) { S.scroll = window.scrollY; S.cat = c; S.sub = null; S.all = false; haptic('tap'); render(); window.scrollTo(0, 0); }
-  function closeCat() { S.cat = null; S.sub = null; S.all = false; haptic('tap'); render(); window.scrollTo(0, S.scroll); }
-  if (inTg) tg.BackButton.onClick(() => { if (S.cat) closeCat(); });
+  function closeCat() { S.cat = null; S.inc = false; S.sub = null; S.all = false; haptic('tap'); render(); window.scrollTo(0, S.scroll); }
+  // Даня 13.11: тап по «доход» на главной — отдельный экран доходов с крупной цифрой
+  function openInc() { S.scroll = window.scrollY; S.inc = true; S.cat = null; haptic('tap'); render(); window.scrollTo(0, 0); }
+  if (inTg) tg.BackButton.onClick(() => { if (S.cat || S.inc) closeCat(); });
 
   function render() {
     const D = DATA;
@@ -189,8 +195,67 @@
     const shown = tx.filter(e => (!S.cat || e.cat === S.cat) && (!S.sub || (S.sub === 'dl') === !!e.dl))
       .sort((a, b) => b.d.localeCompare(a.d) || Number(b.id) - Number(a.id));
 
-    if (inTg) S.cat ? tg.BackButton.show() : tg.BackButton.hide();
+    if (inTg) (S.cat || S.inc) ? tg.BackButton.show() : tg.BackButton.hide();
     const cur = `<span class="cur"><button data-cur="USD" class="${S.cur === 'USD' ? 'on' : ''}">$</button><button data-cur="RUB" class="${S.cur === 'RUB' ? 'on' : ''}">₽</button></span>`;
+
+    if (S.inc) {
+      const all = (D.incomes || []);
+      const incM = all.filter(r => r.d.startsWith(S.month)).sort((a, b) => b.d.localeCompare(a.d));
+      const iv = r => (S.cur === 'USD' ? r.usd : r.rub) || 0;
+      const io = r => (S.cur === 'USD' ? r.rub : r.usd) || 0;
+      const itot = incM.reduce((s, r) => s + iv(r), 0);
+      const left = itot - total;
+      const bySrc = {};
+      incM.forEach(r => { bySrc[r.src || 'без источника'] = (bySrc[r.src || 'без источника'] || 0) + iv(r); });
+      const srcs = Object.entries(bySrc).sort((a, b) => b[1] - a[1]);
+      const speak = srcs.length ? srcs[0][1] : 1;
+      const byM = {};
+      all.forEach(r => { const k = r.d.slice(0, 7); byM[k] = (byM[k] || 0) + iv(r); });
+      const ms = Object.keys(byM).sort().reverse();
+      const mpeak = Math.max(...Object.values(byM), 1);
+      const avg = ms.length ? Object.values(byM).reduce((s, v) => s + v, 0) / ms.length : 0;
+      const mLabel = k => { const [yy, mm] = k.split('-').map(Number); return MONTHS[mm - 1] + (yy !== now.getFullYear() ? ' ' + yy : ''); };
+      $app.innerHTML = `
+        <nav>
+          <span class="month"><button id="prev" ${mi <= 0 ? 'disabled' : ''} aria-label="раньше">‹</button><span>${monthName}</span><button id="next" ${mi >= months.length - 1 ? 'disabled' : ''} aria-label="позже">›</button></span>
+          ${cur}
+        </nav>
+        <section class="top">
+          <div class="title">Доход${inTg ? '' : ` · <button class="link" id="back">к расходам</button>`}</div>
+          <div class="total num">${fmt(itot, S.cur)}</div>
+          <div class="meta num">≈ ${fmt(incM.reduce((s, r) => s + io(r), 0), otherCur)} · ${incM.length} ${plural(incM.length, 'поступление', 'поступления', 'поступлений')}</div>
+          <div class="meta num">потрачено ${fmt(total, S.cur)} · ${left >= 0 ? 'осталось' : 'перерасход'} <b>${left >= 0 ? '+' : ''}${fmt(left, S.cur)}</b></div>
+        </section>
+        <section>
+          <h2>Источники</h2>
+          ${srcs.length ? srcs.map(([s, v]) => `
+            <div class="cat">
+              <span class="row"><span>${esc(s)}</span><span class="num">${fmt(v, S.cur)}<i>${itot ? Math.round(v / itot * 100) : 0}%</i></span></span>
+              <span class="bar" style="width:${Math.max(1.5, v / speak * 100)}%"></span>
+            </div>`).join('') : '<p class="empty">В этом месяце доходов нет</p>'}
+        </section>
+        ${incM.length ? `<section>
+          <h2>Поступления</h2>
+          ${incM.map(r => { const dt = new Date(r.d + 'T12:00:00'); return `<div class="tx">
+            <div class="l"><div class="t">${esc(r.src || '—')}</div><div class="s one">${dt.getDate()} ${MON_S[dt.getMonth()]}${r.n ? ' · ' + esc(r.n) : ''}</div></div>
+            <div class="r"><div class="num">${fmt(iv(r), S.cur)}</div><div class="s num">${r.c !== S.cur ? fmt(r.a, r.c) : ''}</div></div>
+          </div>`; }).join('')}
+        </section>` : ''}
+        <section>
+          <h2>По месяцам <i>в среднем ${fmt(avg, S.cur)}</i></h2>
+          ${ms.map(k => `
+            <button class="cat${k === S.month ? '' : ' dim'}" data-im="${k}">
+              <span class="row"><span>${mLabel(k)}${k === thisM ? ' <i>идёт</i>' : ''}</span><span class="num">${fmt(byM[k], S.cur)}</span></span>
+              <span class="bar" style="width:${Math.max(1.5, byM[k] / mpeak * 100)}%"></span>
+            </button>`).join('')}
+        </section>
+        <footer>обновлено ${esc(D.updated)}</footer>`;
+      $app.querySelectorAll('[data-im]').forEach(b => b.onclick = () => {
+        const k = b.dataset.im; if (!months.includes(k)) months.push(k), months.sort();
+        S.month = k; haptic('tap'); render();
+      });
+      return bind(months, months.indexOf(S.month));
+    }
 
     if (S.cat) {
       const ct = byCat[S.cat] || 0;
@@ -224,7 +289,7 @@
       <section class="top">
         <div class="total num">${fmt(total, S.cur)}</div>
         <div class="meta num">потрачено · ≈ ${fmt(tx.reduce((s, e) => s + otherVal(e), 0), otherCur)} · ${tx.length} ${plural(tx.length, 'запись', 'записи', 'записей')}${noRate ? ` · без курса ${noRate}` : ''}</div>
-        <div class="meta num">${inc ? `доход ${fmt(incV, S.cur)} · ${diff >= 0 ? 'осталось' : 'перерасход'} <b>${diff >= 0 ? '+' : ''}${fmt(diff, S.cur)}</b>` : 'доход за месяц не записан'}</div>
+        <button class="meta num incbtn" id="inc">${inc ? `<span class="link">доход ${fmt(incV, S.cur)} ›</span> · ${diff >= 0 ? 'осталось' : 'перерасход'} <b>${diff >= 0 ? '+' : ''}${fmt(diff, S.cur)}</b>` : '<span class="link">доход за месяц не записан ›</span>'}</button>
       </section>
 
       <section>
@@ -310,6 +375,7 @@
     on('prev', () => go(-1));
     on('next', () => go(1));
     on('back', closeCat);
+    on('inc', openInc);
     on('more', () => { S.all = true; haptic('tap'); render(); });
   }
 
@@ -318,7 +384,7 @@
     return m10 === 1 && m100 !== 11 ? a : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? b : c;
   }
 
-  load().then(D => { if (D) { DATA = D; render(); } });
+  load().then(D => { if (D) { DATA = D; if (/(^|[#&])v=inc\b/.test(location.hash)) S.inc = true; render(); } });
 })();
 </script>
 </body>
