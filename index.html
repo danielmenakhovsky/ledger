@@ -9,7 +9,7 @@
 <title>Расходы</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-  :root { --bg: #0e0f11; --ink: #ecedee; --ink2: #a4a8ae; --mute: #6c7077; --accent: #8fb3ff; --line: rgba(255,255,255,.09); }
+  :root { --bg: #0e0f11; --ink: #ecedee; --ink2: #a4a8ae; --mute: #6c7077; --accent: #8fb3ff; --line: rgba(255,255,255,.09); --neg: #ff8a80; --warn: #e6b450; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; background: var(--bg); color: var(--ink);
     font: 15px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif; }
@@ -56,6 +56,17 @@
   .more { display: block; padding: 14px 0 4px; }
   .empty { color: var(--mute); margin: 4px 0 10px; }
   .msg { margin-top: 30vh; text-align: center; color: var(--ink2); padding: 0 20px; }
+  .neg, .sub2 .num.neg { color: var(--neg); }
+  .mn { display: block; width: 100%; }
+  .mn:active { opacity: .6; }
+  .mn .big { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; margin: 2px 0 4px; }
+  .acc { padding: 8px 0 2px; }
+  .acc + .acc { margin-top: 4px; }
+  .sub2 { display: flex; justify-content: space-between; gap: 14px; padding: 3px 0 3px 14px; color: var(--ink2); font-size: 14px; }
+  .sub2 .num { color: var(--ink2); }
+  .warn { color: var(--warn); }
+  .grand { font-weight: 600; }
+  .grand > span:first-child { color: var(--ink) !important; }
   footer { color: var(--mute); font-size: 12px; padding-top: 18px; border-top: 1px solid var(--line); margin-top: 16px; }
 </style>
 </head>
@@ -170,10 +181,12 @@
 
   // категория — вложенный экран: в телеге системная кнопка «назад», в браузере своя
   function openCat(c) { S.scroll = window.scrollY; S.cat = c; S.sub = null; S.all = false; haptic('tap'); render(); window.scrollTo(0, 0); }
-  function closeCat() { S.cat = null; S.inc = false; S.sub = null; S.all = false; haptic('tap'); render(); window.scrollTo(0, S.scroll); }
+  function closeCat() { S.cat = null; S.inc = false; S.money = false; S.sub = null; S.all = false; haptic('tap'); render(); window.scrollTo(0, S.scroll); }
   // Даня 13.11: тап по «доход» на главной — отдельный экран доходов с крупной цифрой
   function openInc() { S.scroll = window.scrollY; S.inc = true; S.cat = null; haptic('tap'); render(); window.scrollTo(0, 0); }
-  if (inTg) tg.BackButton.onClick(() => { if (S.cat || S.inc) closeCat(); });
+  // Даня 21.11: «Деньги сейчас» — тап по блоку на главной, отдельный экран со всеми счетами
+  function openMoney() { S.scroll = window.scrollY; S.money = true; S.inc = false; S.cat = null; haptic('tap'); render(); window.scrollTo(0, 0); }
+  if (inTg) tg.BackButton.onClick(() => { if (S.cat || S.inc || S.money) closeCat(); });
 
   function render() {
     const D = DATA;
@@ -195,8 +208,13 @@
     const shown = tx.filter(e => (!S.cat || e.cat === S.cat) && (!S.sub || (S.sub === 'dl') === !!e.dl))
       .sort((a, b) => b.d.localeCompare(a.d) || Number(b.id) - Number(a.id));
 
-    if (inTg) (S.cat || S.inc) ? tg.BackButton.show() : tg.BackButton.hide();
+    if (inTg) (S.cat || S.inc || S.money) ? tg.BackButton.show() : tg.BackButton.hide();
     const cur = `<span class="cur"><button data-cur="USD" class="${S.cur === 'USD' ? 'on' : ''}">$</button><button data-cur="RUB" class="${S.cur === 'RUB' ? 'on' : ''}">₽</button></span>`;
+
+    if (S.money && D.money) {
+      $app.innerHTML = moneyScreen(D.money, cur);
+      return bind(months, mi);
+    }
 
     if (S.inc) {
       const all = (D.incomes || []);
@@ -292,6 +310,8 @@
         <button class="meta num incbtn" id="inc">${inc ? `<span class="link">доход ${fmt(incV, S.cur)} ›</span> · ${diff >= 0 ? 'осталось' : 'перерасход'} <b>${diff >= 0 ? '+' : ''}${fmt(diff, S.cur)}</b>` : '<span class="link">доход за месяц не записан ›</span>'}</button>
       </section>
 
+      ${D.money ? moneyBlock(D.money) : ''}
+
       <section>
         <h2>Категории</h2>
         ${cats.length ? cats.map(([c, v]) => `
@@ -319,6 +339,82 @@
       </section>
       <footer>обновлено ${esc(D.updated)}</footer>`;
     bind(months, mi);
+  }
+
+  // ── Деньги сейчас ────────────────────────────────────────────────────────────
+  // Снимок собирает scripts/money.py при каждой публикации (и раз в 3 часа): Bybit и Wise по API,
+  // Райф/Т-Банк/нал — ручные строки с датой. Итог = всё − холды карты − мои долги.
+  const mv = (M, usd) => S.cur === 'USD' || !M.usd_rub ? fmt(usd, 'USD') : fmt(usd * M.usd_rub, 'RUB');
+  const mvOther = (M, usd) => S.cur === 'USD' ? (M.usd_rub ? fmt(usd * M.usd_rub, 'RUB') : '') : fmt(usd, 'USD');
+  function qty(a, c) {
+    if (['RUB', 'EUR', 'USD', 'USDT', 'USDC', 'THB', 'IDR'].includes(c)) return fmt(a, c === 'USDC' ? 'USDT' : c, ['USD', 'USDT', 'USDC', 'EUR'].includes(c) && Math.abs(a) < 10000 ? 2 : 0).replace('USDT', c);
+    return a.toLocaleString('ru-RU', { maximumSignificantDigits: 6 }).replace(/ /g, ' ') + ' ' + c;
+  }
+  function dShort(s) { if (!s) return ''; const d = new Date(s.slice(0, 10) + 'T12:00:00'); return d.getDate() + ' ' + MON_S[d.getMonth()]; }
+  function placeNote(p, short) {
+    if (p.unknown) return `<span class="warn">${short ? 'не знаю' : 'не знаю — пришли скрин Джарвису'}</span>`;
+    if (p.old) return `<span class="warn">API не ответил, на ${esc(dShort(p.at))} ${esc((p.at || '').slice(11))}</span>`;
+    if (p.manual) return p.stale ? `<span class="warn">на ${esc(dShort(p.date))}, устарело</span>` : `на ${esc(dShort(p.date))}`;
+    return '';
+  }
+
+  function moneyBlock(M) {
+    const owe = M.debts.filter(d => d.a > 0);
+    return `<section>
+      <button class="mn" id="money">
+        <h2>Деньги сейчас <i>${esc(dShort(M.at))} ${esc(M.at.slice(11))}</i></h2>
+        <div class="big num">${mv(M, M.mine)} <span class="link" style="font-size:17px">›</span></div>
+        <div class="meta num" style="margin-top:0">${owe.length ? `на счетах ${mv(M, M.gross)} · долги −${mv(M, M.owe)}` : `≈ ${mvOther(M, M.mine)}`}${M.unknown.length ? ` · без: ${esc(M.unknown.join(', ').toLowerCase())}` : ''}</div>
+        <div style="margin-top:10px">${M.places.map(p => `<div class="kv"><span>${esc(p.name)}${placeNote(p, 1) ? ` <i class="s" style="font-size:12.5px">${placeNote(p, 1)}</i>` : ''}</span><span class="num">${p.unknown ? '—' : mv(M, p.usd)}</span></div>`).join('')}</div>
+      </button>
+    </section>`;
+  }
+
+  function moneyScreen(M, cur) {
+    const pnl = v => `<span class="num${v < 0 ? ' neg' : ''}">${v >= 0 ? '+' : '−'}${fmt(Math.abs(v), 'USD')}</span>`;
+    const coinRow = (x, extra) => `<div class="sub2"><span>${qty(x.a, x.c)}${extra || ''}</span><span class="num">${x.usd == null ? 'курса нет' : (x.c === 'USD' && S.cur === 'USD' || x.c === 'RUB' && S.cur === 'RUB' ? '' : mv(M, x.usd))}</span></div>`;
+    const placeHtml = p => {
+      let h = `<section><h2>${esc(p.name)}${p.manual ? ' <i>вручную</i>' : ''}</h2>
+        <div class="kv grand"><span>${placeNote(p) || (p.at ? 'всего' : '')}</span><span class="num">${p.unknown ? '—' : mv(M, p.usd)}</span></div>`;
+      if (p.accounts) h += p.accounts.map(a => `<div class="acc">
+          <div class="kv"><span>${esc(a.name)}</span><span class="num">${mv(M, a.usd)}</span></div>
+          ${a.coins.map(x => coinRow(x)).join('')}
+          ${a.upl ? `<div class="sub2"><span>фьючерсы, плюс/минус</span>${pnl(a.upl)}</div>` : ''}
+          ${a.rest ? `<div class="sub2"><span>мелочь</span><span class="num">${mv(M, a.rest)}</span></div>` : ''}
+        </div>`).join('');
+      else if (p.coins && p.coins.length) h += p.coins.map(x => coinRow(x)).join('');
+      if (p.note) h += `<p class="s" style="margin:6px 0 0">${esc(p.note)}</p>`;
+      if (p.positions) h += `<div class="acc"><div class="kv"><span>Открытые позиции <i>уже в Unified</i></span>${p.positions.length ? pnl(p.positions.reduce((s, q) => s + q.pnl, 0)) : '<span class="num">нет</span>'}</div>
+        ${p.positions.map(q => `<div class="sub2"><span>${esc(q.sym)} ${esc(q.side)} x${esc(q.lev)} · ${q.size.toLocaleString('ru-RU')} шт на ${fmt(q.value, 'USD')}<br><i class="s">вход ${q.entry.toLocaleString('ru-RU')} → сейчас ${q.mark.toLocaleString('ru-RU')}${q.liq ? ' · ликвидация ' + q.liq.toLocaleString('ru-RU') : ''}</i></span>${pnl(q.pnl)}</div>`).join('')}</div>`;
+      if (p.holds) h += `<div class="acc"><div class="kv"><span>Холды карты <i>ещё не списано</i></span><span class="num">${p.holds.length ? '−' + mv(M, p.holds.reduce((s, x) => s + x.usd, 0)) : 'нет'}</span></div>
+        ${p.holds.map(x => `<div class="sub2"><span>${esc(x.n)}</span><span class="num">−${mv(M, x.usd)}</span></div>`).join('')}</div>`;
+      return h + '</section>';
+    };
+    const owe = M.debts.filter(d => d.a > 0), owed = M.debts.filter(d => d.a < 0);
+    return `
+      <nav>${inTg ? '<span class="crumb">сейчас</span>' : '<button class="link" id="back">‹ к расходам</button>'}${cur}</nav>
+      <section class="top">
+        <div class="title">Мои деньги</div>
+        <div class="total num">${mv(M, M.mine)}</div>
+        <div class="meta num">≈ ${mvOther(M, M.mine)} · все счета минус долги</div>
+        <div class="meta num">цены на ${esc(dShort(M.at))} ${esc(M.at.slice(11))}${M.unknown.length ? ` · <span class="warn">без: ${esc(M.unknown.join(', ').toLowerCase())}</span>` : ''}</div>
+      </section>
+      ${M.places.map(placeHtml).join('')}
+      <section>
+        <h2>Долги</h2>
+        ${owe.map(d => `<div class="kv"><span>я должен · ${esc(d.who)}</span><span class="num">${qty(d.a, d.c)} <i>−${d.usd == null ? '?' : mv(M, d.usd)}</i></span></div>`).join('')}
+        ${owed.map(d => `<div class="kv"><span>мне должен · ${esc(d.who)} <i>не в итоге</i></span><span class="num">${qty(-d.a, d.c)}</span></div>`).join('')}
+        ${M.debts.length ? '' : '<p class="empty">Долгов нет</p>'}
+      </section>
+      <section>
+        <h2>Итог</h2>
+        <div class="kv"><span>на счетах</span><span class="num">${mv(M, M.gross + M.holds_usd)}</span></div>
+        ${M.holds_usd ? `<div class="kv"><span>холды карты</span><span class="num">−${mv(M, M.holds_usd)}</span></div>` : ''}
+        ${M.owe ? `<div class="kv"><span>мои долги</span><span class="num">−${mv(M, M.owe)}</span></div>` : ''}
+        <div class="kv grand"><span>мои деньги</span><span class="num">${mv(M, M.mine)}</span></div>
+        ${M.usd_rub ? `<p class="s" style="margin:6px 0 0">курс ЦБ ${M.usd_rub.toFixed(2).replace('.', ',')} ₽ за $ · крипта по ценам Bybit</p>` : ''}
+      </section>
+      <footer>обновлено ${esc(M.at)} · Bybit и Wise сами, остальное вручную</footer>`;
   }
 
   function txList(shown, val) {
@@ -376,6 +472,7 @@
     on('next', () => go(1));
     on('back', closeCat);
     on('inc', openInc);
+    on('money', openMoney);
     on('more', () => { S.all = true; haptic('tap'); render(); });
   }
 
@@ -384,7 +481,7 @@
     return m10 === 1 && m100 !== 11 ? a : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? b : c;
   }
 
-  load().then(D => { if (D) { DATA = D; if (/(^|[#&])v=inc\b/.test(location.hash)) S.inc = true; render(); } });
+  load().then(D => { if (D) { DATA = D; if (/(^|[#&])v=inc\b/.test(location.hash)) S.inc = true; if (/(^|[#&])v=money\b/.test(location.hash)) S.money = true; render(); } });
 })();
 </script>
 </body>
