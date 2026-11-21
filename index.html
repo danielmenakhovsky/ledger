@@ -432,10 +432,10 @@
   function moneyBlock(M) {
     const sub = M.unknown.length
       ? `<span class="warn">без ${esc(M.unknown.map(n => GEN[n] || n).join(' и ').toLowerCase())}</span>`
-      : (M.owe ? 'за вычетом долгов' : 'все счета');
+      : 'все счета';  // 21.11 15:53 Даня: «сколько реально есть денег, без вычета долгов»
     return `<button class="mrow" id="money" aria-label="Мои деньги сейчас, подробно">
         <span class="ml"><span class="mt">Мои деньги</span><span class="ms">сейчас · ${sub}</span></span>
-        <span class="mv num">${mv(M, M.mine)}<span class="chev">›</span></span>
+        <span class="mv num">${mv(M, M.gross)}<span class="chev">›</span></span>
       </button>`;
   }
 
@@ -482,9 +482,9 @@
       <nav>${inTg ? '<span></span>' : '<button class="link" id="back">‹ к расходам</button>'}${cur}</nav>
       <section class="mtop">
         <div class="title">Мои деньги</div>
-        <div class="mtotal num">${mv(M, M.mine)}</div>
-        <div class="meta num">≈ ${mvOther(M, M.mine)} · на ${esc(M.at.slice(11))}${unk ? ' · ' + unk : ''}</div>
-        ${M.owe || M.holds_usd ? `<div class="meta num">на счетах ${mv(M, M.gross + M.holds_usd)}${M.holds_usd ? ` · холды −${mv(M, M.holds_usd)}` : ''}${M.owe ? ` · долги −${mv(M, M.owe)}` : ''}</div>` : ''}
+        <div class="mtotal num">${mv(M, M.gross)}</div>
+        <div class="meta num">≈ ${mvOther(M, M.gross)} · на ${esc(M.at.slice(11))}${unk ? ' · ' + unk : ''}</div>
+        ${M.owe || M.holds_usd ? `<div class="meta num">${M.holds_usd ? `холды карты −${mv(M, M.holds_usd)} уже вычтены` : ''}${M.holds_usd && M.owe ? ' · ' : ''}${M.owe ? `я должен ${mv(M, M.owe)}, без него ${mv(M, M.mine)}` : ''}</div>` : ''}
       </section>
       <section class="mlist">${rows.join('')}${debtRows.length ? '<div class="gap"></div>' + debtRows.join('') : ''}</section>
       <footer>${M.usd_rub ? `курс ЦБ ${M.usd_rub.toFixed(2).replace('.', ',')} ₽ · ` : ''}Bybit и Wise сами, остальное вручную${M.holds_usd ? '' : ' · холдов нет'}</footer>`;
