@@ -9,7 +9,7 @@
 <title>Расходы</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-  :root { --bg: #0e0f11; --ink: #ecedee; --ink2: #a4a8ae; --mute: #6c7077; --accent: #8fb3ff; --line: rgba(255,255,255,.09); --neg: #ff8a80; --warn: #e6b450; }
+  :root { --bg: #0e0f11; --ink: #ecedee; --ink2: #a4a8ae; --mute: #6c7077; --accent: #8fb3ff; --line: rgba(255,255,255,.09); --neg: #ff8a80; --warn: #e6b450; --pos: #6fdc9a; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; background: var(--bg); color: var(--ink);
     font: 15px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif; }
@@ -57,6 +57,7 @@
   .empty { color: var(--mute); margin: 4px 0 10px; }
   .msg { margin-top: 30vh; text-align: center; color: var(--ink2); padding: 0 20px; }
   .neg, .sub2 .num.neg { color: var(--neg); }
+  .pos, .r .v.pos, .r.l3 .v.pos { color: var(--pos); }
   .mtop { padding: 6px 0 14px; }
   .mtop .title { font-size: 15px; color: var(--ink2); font-weight: 500; margin-bottom: 0; }
   .mtotal { font-size: 38px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; }
@@ -113,20 +114,61 @@
   const ver = v => inTg && tg.isVersionAtLeast && tg.isVersionAtLeast(v);
   const haptic = kind => { try { if (ver('6.1')) kind === 'tap' ? tg.HapticFeedback.selectionChanged() : tg.HapticFeedback.impactOccurred(kind); } catch (e) {} };
 
-  function applyTheme() {
-    if (!inTg) return;
-    const t = tg.themeParams || {}, r = document.documentElement.style, dark = tg.colorScheme !== 'light';
-    const set = (v, x) => x && r.setProperty(v, x);
-    set('--bg', t.bg_color);
-    set('--ink', t.text_color);
-    set('--ink2', t.subtitle_text_color || t.hint_color);
-    set('--mute', t.hint_color);
-    set('--accent', t.button_color || t.accent_text_color);
-    r.setProperty('--line', dark ? 'rgba(255,255,255,.09)' : 'rgba(0,0,0,.09)');
-    try {
-      if (ver('6.1') && t.bg_color) { tg.setHeaderColor(t.bg_color); tg.setBackgroundColor(t.bg_color); }
-    } catch (e) {}
+  // ── тема ───────────────────────────────────────────────────────────────────
+  // Даня 21.11 r4: светлая тема телеги — «жёлтые цифры плохо читаются», серое на сером.
+  // Цвета берём из themeParams (вне телеги — из системной темы), акценты свои для светлой
+  // и тёмной, и каждый цвет догоняем до контраста WCAG AA с фактическим фоном: у кастомных тем
+  // телеги фон бывает серым, и стандартный hint на нём не читается.
+  const hex2rgb = h => { h = String(h || '').replace('#', ''); if (h.length === 3) h = h.replace(/./g, c => c + c); const n = parseInt(h, 16); return isNaN(n) || h.length !== 6 ? null : [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+  const rgb2hex = c => '#' + c.map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('');
+  const lum = c => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+  const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  function ensure(color, bg, min) {          // тянем цвет к чёрному/белому, пока не хватит контраста
+    let c = hex2rgb(color), b = hex2rgb(bg);
+    if (!c || !b) return color;
+    const to = lum(b) > 0.18 ? [0, 0, 0] : [255, 255, 255];
+    for (let i = 0; i < 40 && contrast(c, b) < min; i++) c = c.map((v, k) => v + (to[k] - v) * 0.08);
+    return rgb2hex(c);
   }
+  const ACC = {   // свои акценты: красный минус, жёлтая пометка, зелёный плюс
+    dark: { neg: '#ff8a80', warn: '#e6b450', pos: '#6fdc9a' },
+    light: { neg: '#c62828', warn: '#8a5a00', pos: '#1b7f3b' },
+  };
+  const BASE = {
+    dark: { bg: '#0e0f11', text: '#ecedee', sub: '#a4a8ae', hint: '#8b9096', link: '#8fb3ff' },
+    light: { bg: '#ffffff', text: '#111214', sub: '#5c6066', hint: '#6b6f76', link: '#1f5fd6' },
+  };
+  function applyTheme() {
+    const t = inTg ? (tg.themeParams || {}) : {};
+    const sysLight = !inTg && window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches;
+    let bg = t.bg_color || (sysLight ? BASE.light.bg : BASE.dark.bg);
+    const bgRgb = hex2rgb(bg) || [14, 15, 17];
+    const dark = lum(bgRgb) <= 0.18;           // по фактическому фону, а не по названию темы
+    const B = BASE[dark ? 'dark' : 'light'], A = ACC[dark ? 'dark' : 'light'];
+    const P = {
+      '--bg': bg,
+      '--ink': ensure(t.text_color || B.text, bg, 7),
+      '--ink2': ensure(t.subtitle_text_color || t.hint_color || B.sub, bg, 4.5),
+      '--mute': ensure(t.hint_color || B.hint, bg, 4.5),
+      '--accent': ensure(t.link_color || t.button_color || B.link, bg, 4.5),
+      '--neg': ensure(A.neg, bg, 4.5),
+      '--warn': ensure(A.warn, bg, 4.5),
+      '--pos': ensure(A.pos, bg, 4.5),
+      '--line': dark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.12)',
+    };
+    const r = document.documentElement.style;
+    Object.entries(P).forEach(([k, v]) => r.setProperty(k, v));
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+    const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = bg;
+    window.__theme = P;                         // для проверки контраста
+    if (!inTg) return;
+    // Даня 21.11: внизу у полоски «домой» вылезала светлая скруглённая плашка — это нижняя полоса
+    // телеги (bottom_bar_bg_color), которую приложение не красило. Красим всё в наш фон.
+    try { if (ver('6.1')) { tg.setHeaderColor(bg); tg.setBackgroundColor(bg); } } catch (e) {}
+    try { if (ver('7.10')) tg.setBottomBarColor(bg); } catch (e) {}
+  }
+  applyTheme();
+  if (!inTg && window.matchMedia) matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { applyTheme(); if (DATA) render(); });
   if (inTg) {
     tg.ready();
     tg.expand();
@@ -404,7 +446,7 @@
   }
   const short = n => n.toLocaleString('ru-RU', { maximumSignificantDigits: 4 }).replace(/ /g, ' ');
   function moneyScreen(M, cur) {
-    const pnl = v => `<span class="v num${v < 0 ? ' neg' : ''}">${v >= 0 ? '+' : '−'}${mv(M, Math.abs(v))}</span>`;
+    const pnl = v => `<span class="v num${v < 0 ? ' neg' : v > 0 ? ' pos' : ''}">${v >= 0 ? '+' : '−'}${mv(M, Math.abs(v))}</span>`;
     const val = usd => `<span class="v num">${mv(M, usd)}</span>`;
     const row = (cls, left, q, right) => `<div class="r ${cls}"><span class="k">${left}${q ? ` <i>${q}</i>` : ''}</span>${right}</div>`;
     const coinQ = x => x.c === 'USD' ? '' : cq(x.a, x.c);
