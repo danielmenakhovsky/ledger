@@ -57,6 +57,14 @@
   .empty { color: var(--mute); margin: 4px 0 10px; }
   .msg { margin-top: 30vh; text-align: center; color: var(--ink2); padding: 0 20px; }
   .neg, .sub2 .num.neg { color: var(--neg); }
+  .mrow { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 14px;
+    min-height: 56px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .mrow:active { opacity: .6; }
+  .mrow .ml { display: flex; flex-direction: column; min-width: 0; }
+  .mrow .mt { font-weight: 600; }
+  .mrow .ms { color: var(--mute); font-size: 12.5px; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mrow .mv { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
+  .mrow .chev { color: var(--mute); font-weight: 400; margin-left: 6px; }
   .mn { display: block; width: 100%; }
   .mn:active { opacity: .6; }
   .mn .big { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; margin: 2px 0 4px; }
@@ -184,7 +192,7 @@
   function closeCat() { S.cat = null; S.inc = false; S.money = false; S.sub = null; S.all = false; haptic('tap'); render(); window.scrollTo(0, S.scroll); }
   // Даня 13.11: тап по «доход» на главной — отдельный экран доходов с крупной цифрой
   function openInc() { S.scroll = window.scrollY; S.inc = true; S.cat = null; haptic('tap'); render(); window.scrollTo(0, 0); }
-  // Даня 21.11: «Деньги сейчас» — тап по блоку на главной, отдельный экран со всеми счетами
+  // Даня 21.11: «Мои деньги» — тап по строке на главной, отдельный экран со всеми счетами
   function openMoney() { S.scroll = window.scrollY; S.money = true; S.inc = false; S.cat = null; haptic('tap'); render(); window.scrollTo(0, 0); }
   if (inTg) tg.BackButton.onClick(() => { if (S.cat || S.inc || S.money) closeCat(); });
 
@@ -300,6 +308,7 @@
     tx.forEach(e => { const c = byCur[e.c] = byCur[e.c] || { a: 0, v: 0 }; c.a += e.a; c.v += val(e); });
 
     $app.innerHTML = `
+      ${D.money ? moneyBlock(D.money) : ''}
       <nav>
         <span class="month"><button id="prev" ${mi <= 0 ? 'disabled' : ''} aria-label="раньше">‹</button><span>${monthName}</span><button id="next" ${mi >= months.length - 1 ? 'disabled' : ''} aria-label="позже">›</button></span>
         ${cur}
@@ -309,8 +318,6 @@
         <div class="meta num">потрачено · ≈ ${fmt(tx.reduce((s, e) => s + otherVal(e), 0), otherCur)} · ${tx.length} ${plural(tx.length, 'запись', 'записи', 'записей')}${noRate ? ` · без курса ${noRate}` : ''}</div>
         <button class="meta num incbtn" id="inc">${inc ? `<span class="link">доход ${fmt(incV, S.cur)} ›</span> · ${diff >= 0 ? 'осталось' : 'перерасход'} <b>${diff >= 0 ? '+' : ''}${fmt(diff, S.cur)}</b>` : '<span class="link">доход за месяц не записан ›</span>'}</button>
       </section>
-
-      ${D.money ? moneyBlock(D.money) : ''}
 
       <section>
         <h2>Категории</h2>
@@ -358,16 +365,17 @@
     return '';
   }
 
+  // Даня 21.11 r2: одна строка над месяцем. Цифра не зависит от месяца, поэтому стоит вне его
+  // (под переключателем месяца читалась как ноябрьская и спорила с «осталось»). Детали — по тапу.
+  const GEN = { 'Т-Банк': 'т-банка', 'Нал': 'нала', 'Райф': 'райфа' };
   function moneyBlock(M) {
-    const owe = M.debts.filter(d => d.a > 0);
-    return `<section>
-      <button class="mn" id="money">
-        <h2>Деньги сейчас <i>${esc(dShort(M.at))} ${esc(M.at.slice(11))}</i></h2>
-        <div class="big num">${mv(M, M.mine)} <span class="link" style="font-size:17px">›</span></div>
-        <div class="meta num" style="margin-top:0">${owe.length ? `на счетах ${mv(M, M.gross)} · долги −${mv(M, M.owe)}` : `≈ ${mvOther(M, M.mine)}`}${M.unknown.length ? ` · без: ${esc(M.unknown.join(', ').toLowerCase())}` : ''}</div>
-        <div style="margin-top:10px">${M.places.map(p => `<div class="kv"><span>${esc(p.name)}${placeNote(p, 1) ? ` <i class="s" style="font-size:12.5px">${placeNote(p, 1)}</i>` : ''}</span><span class="num">${p.unknown ? '—' : mv(M, p.usd)}</span></div>`).join('')}</div>
-      </button>
-    </section>`;
+    const sub = M.unknown.length
+      ? `<span class="warn">без ${esc(M.unknown.map(n => GEN[n] || n).join(' и ').toLowerCase())}</span>`
+      : (M.owe ? 'за вычетом долгов' : 'все счета');
+    return `<button class="mrow" id="money" aria-label="Мои деньги сейчас, подробно">
+        <span class="ml"><span class="mt">Мои деньги</span><span class="ms">сейчас · ${sub}</span></span>
+        <span class="mv num">${mv(M, M.mine)}<span class="chev">›</span></span>
+      </button>`;
   }
 
   function moneyScreen(M, cur) {
@@ -392,11 +400,11 @@
     };
     const owe = M.debts.filter(d => d.a > 0), owed = M.debts.filter(d => d.a < 0);
     return `
-      <nav>${inTg ? '<span class="crumb">сейчас</span>' : '<button class="link" id="back">‹ к расходам</button>'}${cur}</nav>
+      <nav>${inTg ? '<span class="crumb">не зависит от месяца</span>' : '<button class="link" id="back">‹ к расходам</button>'}${cur}</nav>
       <section class="top">
         <div class="title">Мои деньги</div>
         <div class="total num">${mv(M, M.mine)}</div>
-        <div class="meta num">≈ ${mvOther(M, M.mine)} · все счета минус долги</div>
+        <div class="meta num">≈ ${mvOther(M, M.mine)} · сейчас, все счета минус долги</div>
         <div class="meta num">цены на ${esc(dShort(M.at))} ${esc(M.at.slice(11))}${M.unknown.length ? ` · <span class="warn">без: ${esc(M.unknown.join(', ').toLowerCase())}</span>` : ''}</div>
       </section>
       ${M.places.map(placeHtml).join('')}
