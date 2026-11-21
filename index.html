@@ -178,6 +178,23 @@
     applyTheme();
     tg.onEvent('themeChanged', () => { applyTheme(); if (DATA) render(); });
   }
+  // 21.11 16:00: диагностика плашки внизу — 5 быстрых тапов в любом месте показывают, что отдаёт Телеграм
+  (function () {
+    let n = 0, t0 = 0;
+    document.addEventListener('click', () => {
+      const now = Date.now(); n = now - t0 < 600 ? n + 1 : 1; t0 = now;
+      if (n < 5 || !inTg) return; n = 0;
+      const tp = tg.themeParams || {}, sa = tg.safeAreaInset || {}, csa = tg.contentSafeAreaInset || {};
+      const lines = ['v ' + tg.version + ' · ' + tg.platform + ' · ' + tg.colorScheme,
+        'bg ' + tp.bg_color + ' · sec ' + tp.secondary_bg_color + ' · bottom_bar ' + tp.bottom_bar_bg_color,
+        'bottomBarColor ' + tg.bottomBarColor + ' · bgColor ' + tg.backgroundColor,
+        'expanded ' + tg.isExpanded + ' · fullscreen ' + tg.isFullscreen + ' · vh ' + tg.viewportHeight + '/' + tg.viewportStableHeight + ' · win ' + innerHeight,
+        'safe b ' + sa.bottom + ' · content safe b ' + csa.bottom];
+      const d = document.createElement('pre');
+      d.style.cssText = 'position:fixed;left:8px;right:8px;top:40%;z-index:99;background:#000;color:#0f0;font:12px/1.4 monospace;padding:10px;border-radius:8px;white-space:pre-wrap';
+      d.textContent = lines.join('\n'); d.onclick = () => d.remove(); document.body.appendChild(d);
+    });
+  })();
 
   function fmt(x, cur, dec) {
     const a = Math.abs(x);
