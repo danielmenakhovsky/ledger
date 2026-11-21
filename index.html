@@ -404,7 +404,7 @@
   }
   const short = n => n.toLocaleString('ru-RU', { maximumSignificantDigits: 4 }).replace(/ /g, ' ');
   function moneyScreen(M, cur) {
-    const pnl = v => `<span class="v num${v < 0 ? ' neg' : ''}">${v >= 0 ? '+' : '−'}${fmt(Math.abs(v), 'USD')}</span>`;
+    const pnl = v => `<span class="v num${v < 0 ? ' neg' : ''}">${v >= 0 ? '+' : '−'}${mv(M, Math.abs(v))}</span>`;
     const val = usd => `<span class="v num">${mv(M, usd)}</span>`;
     const row = (cls, left, q, right) => `<div class="r ${cls}"><span class="k">${left}${q ? ` <i>${q}</i>` : ''}</span>${right}</div>`;
     const coinQ = x => x.c === 'USD' ? '' : cq(x.a, x.c);
@@ -413,7 +413,7 @@
       if (p.unknown) { rows.push(row('l1', esc(p.name), '<span class="warn">не знаю</span>', '<span class="v num">—</span>')); return; }
       const one = !p.accounts && p.coins.length === 1 ? p.coins[0] : null;
       const note = placeNote(p);
-      let q = one ? coinQ(one) : '';
+      let q = one && !(one.c === 'RUB' && S.cur === 'RUB') ? coinQ(one) : '';
       if (note) q = (q ? q + ' · ' : '') + note;
       rows.push(row('l1', esc(p.name), q, val(p.usd)));
       if (!p.accounts && !one) p.coins.forEach(x => rows.push(row('l2', esc(x.c), coinQ(x), x.usd == null ? '<span class="v">курса нет</span>' : val(x.usd))));
