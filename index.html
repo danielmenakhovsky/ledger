@@ -144,8 +144,12 @@
     const t = inTg ? (tg.themeParams || {}) : {};
     const sysLight = !inTg && window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches;
     let bg = t.bg_color || (sysLight ? BASE.light.bg : BASE.dark.bg);
-    const bgRgb = hex2rgb(bg) || [14, 15, 17];
+    let bgRgb = hex2rgb(bg) || [14, 15, 17];
     const dark = lum(bgRgb) <= 0.18;           // по фактическому фону, а не по названию темы
+    // 21.11 16:28: Телеграм iOS 9.6 игнорирует setBottomBarColor и рисует полосу у «домой» своим #ececec;
+    // на сером фоне темы (#c0c0c0) она торчит плашкой. В светлой теме берём фон #ececec — полоса сливается.
+    // Не помогло — откат: ~/Downloads/ledger-backup/index_before_lightbg_1628.html
+    if (inTg && !dark) { bg = '#ececec'; bgRgb = hex2rgb(bg); }
     const B = BASE[dark ? 'dark' : 'light'], A = ACC[dark ? 'dark' : 'light'];
     const P = {
       '--bg': bg,
