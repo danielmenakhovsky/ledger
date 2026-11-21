@@ -405,7 +405,7 @@
         <div class="title">Мои деньги</div>
         <div class="total num">${mv(M, M.mine)}</div>
         <div class="meta num">≈ ${mvOther(M, M.mine)} · сейчас, все счета минус долги</div>
-        <div class="meta num">цены на ${esc(dShort(M.at))} ${esc(M.at.slice(11))}${M.unknown.length ? ` · <span class="warn">без: ${esc(M.unknown.join(', ').toLowerCase())}</span>` : ''}</div>
+        <div class="meta num">цены на ${esc(dShort(M.at))} ${esc(M.at.slice(11))}${M.unknown.length ? ` · <span class="warn">без ${esc(M.unknown.map(n => GEN[n] || n).join(' и ').toLowerCase())}</span>` : ''}</div>
       </section>
       ${M.places.map(placeHtml).join('')}
       <section>
