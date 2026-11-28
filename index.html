@@ -459,10 +459,13 @@
       rows.push(row('l1', esc(p.name), q, val(p.usd)));
       if (!p.accounts && !one) p.coins.forEach(x => rows.push(row('l2', esc(x.c), coinQ(x), x.usd == null ? '<span class="v">курса нет</span>' : val(x.usd))));
       (p.accounts || []).slice().sort((x, y) => y.usd - x.usd).forEach(a => {
-        const big = a.coins.length === 1 && !a.upl && !a.rest ? a.coins[0] : null;
+        const big = a.coins.length === 1 && !a.upl && !a.rest && !a.coins[0].avg ? a.coins[0] : null;
         rows.push(row('l2', esc(a.name), big ? coinQ(big) : '', val(a.usd)));
         if (big) return;
-        a.coins.forEach(x => rows.push(row('l3', esc(x.c), short(x.a), val(x.usd))));
+        // Даня 28.11: спот как фьючерсы — стоимость · средняя покупки → сейчас, справа P&L (scripts/spot_cost.py)
+        a.coins.forEach(x => rows.push(x.avg
+          ? row('l3', esc(x.c), `${fmt(x.usd, 'USD')} · ${short(x.avg)} → ${short(x.mark)}`, pnl(x.pnl))
+          : row('l3', esc(x.c), short(x.a) + (x.noentry ? ' · цена входа неизвестна' : ''), val(x.usd))));
         const pos = a.name === 'Unified' ? (p.positions || []) : [];
         pos.forEach(o => rows.push(row('l3', `${esc(o.sym)} ${esc(o.side)} x${esc(o.lev)}`, `${fmt(o.value, 'USD')} · ${short(o.entry)} → ${short(o.mark)}`, pnl(o.pnl))));
         if (a.upl && !pos.length) rows.push(row('l3', 'фьючерсы', '', pnl(a.upl)));
